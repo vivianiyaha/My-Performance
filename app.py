@@ -42,13 +42,11 @@ st.markdown("""
 col1, col2 = st.columns([1, 6])
 
 with col1:
-    st.image("logo.png", width=80)  # Add your logo file in same folder
-
+    st.image("logo.png", width=300) 
 with col2:
     st.title("Performance Management Dashboard")
 
-# -------------------------
-# SAMPLE DATA (Editable)
+
 # -------------------------
 data = {
     "Employee": ["Alice", "Bob", "Charlie", "David"],
