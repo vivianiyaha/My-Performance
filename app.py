@@ -1,6 +1,15 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from supabase import create_client
+
+# -------------------------
+# SUPABASE CONFIG
+# -------------------------
+SUPABASE_URL = "YOUR_URL"
+SUPABASE_KEY = "YOUR_KEY"
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # -------------------------
 # PAGE CONFIG
@@ -8,73 +17,89 @@ import numpy as np
 st.set_page_config(page_title="Performance Dashboard", layout="wide")
 
 # -------------------------
-# CUSTOM CSS (White, Black, Orange Theme)
+# CUSTOM CSS
 # -------------------------
 st.markdown("""
     <style>
-    body {
-        background-color: white;
-        color: black;
-    }
-    .stApp {
-        background-color: white;
-    }
-    h1, h2, h3 {
-        color: black;
-    }
+    .stApp {background-color: white;}
+    h1, h2, h3 {color: black;}
     .metric-box {
         background-color: #f5f5f5;
         padding: 15px;
         border-radius: 10px;
         border-left: 6px solid orange;
     }
-    .stButton>button {
-        background-color: orange;
-        color: white;
-        border-radius: 8px;
-    }
     </style>
 """, unsafe_allow_html=True)
 
 # -------------------------
-# HEADER WITH LOGO
+# HEADER
 # -------------------------
 col1, col2 = st.columns([1, 6])
 
 with col1:
-    st.image("logo.png", width=300) 
+    st.image("logo.png", width=300)
+
 with col2:
     st.title("Performance Management Dashboard")
 
+# -------------------------
+# LOAD DATA FROM DATABASE
+# -------------------------
+@st.cache_data(ttl=5)
+def load_data():
+    response = supabase.table("employees").select("*").execute()
+    df = pd.DataFrame(response.data)
+
+    if df.empty:
+        df = pd.DataFrame({
+            "Employee": ["Alice", "Bob"],
+            "Q1": [70, 60],
+            "Q2": [75, 65],
+            "Q3": [80, 70],
+            "Q4": [85, 72],
+            "Appraisal Completed": [True, False]
+        })
+    return df
+
+def save_data(df):
+    # Clear table and insert fresh data
+    supabase.table("employees").delete().neq("Employee", "").execute()
+    supabase.table("employees").insert(df.to_dict(orient="records")).execute()
 
 # -------------------------
-data = {
-    "Employee": ["Alice", "Bob", "Charlie", "David"],
-    "Q1": [70, 60, 80, 75],
-    "Q2": [75, 65, 82, 78],
-    "Q3": [80, 70, 85, 80],
-    "Q4": [85, 72, 88, 83],
-    "Appraisal Completed": [True, True, False, True]
-}
+# SESSION STATE
+# -------------------------
+if "data" not in st.session_state:
+    st.session_state.data = load_data()
 
-df = pd.DataFrame(data)
+if "last_saved" not in st.session_state:
+    st.session_state.last_saved = st.session_state.data.copy()
 
 # -------------------------
 # EDITABLE TABLE
 # -------------------------
 st.subheader("Employee Quarterly Reviews")
 
-df = st.data_editor(df, num_rows="dynamic")
+edited_df = st.data_editor(st.session_state.data, num_rows="dynamic")
+
+# -------------------------
+# AUTO SAVE
+# -------------------------
+if not edited_df.equals(st.session_state.last_saved):
+    save_data(edited_df)
+    st.session_state.last_saved = edited_df.copy()
+    st.session_state.data = edited_df.copy()
+    st.toast("Saved to cloud ✅")
+
+df = edited_df.copy()
 
 # -------------------------
 # KPI CALCULATIONS
 # -------------------------
-# % Improvement (Q1 → Q4)
 df["Improvement %"] = ((df["Q4"] - df["Q1"]) / df["Q1"]) * 100
 
 avg_improvement = df["Improvement %"].mean()
-
-# Appraisal Completion Rate
 completion_rate = df["Appraisal Completed"].mean() * 100
 
 # -------------------------
@@ -101,7 +126,7 @@ with col2:
     """, unsafe_allow_html=True)
 
 # -------------------------
-# EMPLOYEE PERFORMANCE VIEW
+# TREND
 # -------------------------
 st.subheader("Employee Performance Trend")
 
@@ -122,14 +147,7 @@ trend = pd.DataFrame({
 st.line_chart(trend.set_index("Quarter"))
 
 # -------------------------
-# RAW DATA VIEW
-# -------------------------
-st.subheader("Full Data")
-
-st.dataframe(df)
-
-# -------------------------
 # FOOTER
 # -------------------------
 st.markdown("---")
-st.markdown("© 2026 Performance Dashboard | Built with Streamlit")
+st.markdown("© 2026 Performance Dashboard")
