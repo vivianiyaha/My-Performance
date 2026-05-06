@@ -1,20 +1,14 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import os
-from supabase import create_client
 
 # -------------------------
-# SUPABASE CONFIG
+# CONFIG
 # -------------------------
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://klfkkitsbuaclttnncap.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_2tcV04t6R3BXva5v2K-rLw_skW2ls_p")
+CSV_FILE = "employees.csv"
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# -------------------------
-# PAGE CONFIG
-# -------------------------
 st.set_page_config(page_title="Performance Dashboard", layout="wide")
 
 # -------------------------
@@ -40,30 +34,29 @@ col1, col2 = st.columns([1, 6])
 
 with col1:
     if os.path.exists("logo.png"):
-        st.image("logo.png", width=400)
+        st.image("logo.png", width=200)
 
 with col2:
     st.title("Performance Management Dashboard")
 
 # -------------------------
-# LOAD DATA
+# LOAD DATA (CSV)
 # -------------------------
 @st.cache_data(ttl=10)
 def load_data():
     try:
-        response = supabase.table("employees").select("*").execute()
-        data = response.data or []
+        if os.path.exists(CSV_FILE):
+            df = pd.read_csv(CSV_FILE)
 
-        df = pd.DataFrame(data)
+            if df.empty:
+                raise ValueError("CSV is empty")
 
-        # IMPORTANT FIX: handle truly empty table safely
-        if df.empty:
-            raise ValueError("Empty table")
-
-        return df
+            return df
+        else:
+            raise FileNotFoundError("CSV not found")
 
     except Exception as e:
-        st.warning(f"Using fallback data (DB issue: {e})")
+        st.warning(f"Using fallback data (CSV issue: {e})")
 
         return pd.DataFrame({
             "employee": ["Alice", "Bob"],
@@ -74,19 +67,12 @@ def load_data():
             "appraisal_completed": [True, False]
         })
 
-
 # -------------------------
-# SAVE DATA (FIXED - IMPORTANT)
+# SAVE DATA (CSV)
 # -------------------------
 def save_data(df):
     try:
-        # safer delete (prevents wiping issues)
-        supabase.table("employees").delete().neq("employee", "NONE").execute()
-
-        supabase.table("employees").insert(
-            df.to_dict(orient="records")
-        ).execute()
-
+        df.to_csv(CSV_FILE, index=False)
     except Exception as e:
         st.error(f"Save failed: {e}")
 
@@ -111,18 +97,21 @@ edited_df = st.data_editor(
 )
 
 # -------------------------
-# AUTO SAVE (FIXED SAFER CHECK)
+# AUTO SAVE
 # -------------------------
 if not edited_df.equals(st.session_state.last_saved):
     save_data(edited_df)
+
     st.session_state.last_saved = edited_df.copy()
     st.session_state.data = edited_df.copy()
-    st.toast("Saved to cloud ✅")
+
+    st.cache_data.clear()
+    st.toast("Saved to CSV ✅")
 
 df = edited_df.copy()
 
 # -------------------------
-# KPI CALCULATIONS (SAFE)
+# KPI CALCULATIONS
 # -------------------------
 try:
     df["improvement_pct"] = ((df["q4"] - df["q1"]) / df["q1"]) * 100
@@ -158,13 +147,16 @@ with col2:
     """, unsafe_allow_html=True)
 
 # -------------------------
-# TREND (SAFE)
+# TREND CHART
 # -------------------------
 st.subheader("Employee Performance Trend")
 
 if not df.empty and "employee" in df.columns:
 
-    selected_employee = st.selectbox("Select Employee", df["employee"].unique())
+    selected_employee = st.selectbox(
+        "Select Employee",
+        df["employee"].unique()
+    )
 
     emp_data = df[df["employee"] == selected_employee]
 
