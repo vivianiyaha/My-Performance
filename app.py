@@ -41,7 +41,7 @@ col1, col2 = st.columns([1, 6])
 
 with col1:
     if os.path.exists("logo.png"):
-        st.image("logo.png", width=120)
+        st.image("logo.png", width=400)
 
 with col2:
     st.title("Performance Management Dashboard")
