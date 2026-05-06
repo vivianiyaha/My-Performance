@@ -1,13 +1,14 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import os
 from supabase import create_client
 
 # -------------------------
-# SUPABASE CONFIG
+# SUPABASE CONFIG (USE ENV VARS)
 # -------------------------
-SUPABASE_URL = "https://klfkkitsbuaclttnncap.supabase.co"
-SUPABASE_KEY = "sb_publishable_2tcV04t6R3BXva5v2K-rLw_skW2ls_p"
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://klfkkitsbuaclttnncap.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_2tcV04t6R3BXva5v2K-rLw_skW2ls_p")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -38,7 +39,10 @@ st.markdown("""
 col1, col2 = st.columns([1, 6])
 
 with col1:
-    st.image("logo.png", width=300)
+    try:
+        st.image("logo.png", width=120)
+    except:
+        st.write("")
 
 with col2:
     st.title("Performance Management Dashboard")
@@ -46,26 +50,39 @@ with col2:
 # -------------------------
 # LOAD DATA FROM DATABASE
 # -------------------------
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=10)
 def load_data():
-    response = supabase.table("employees").select("*").execute()
-    df = pd.DataFrame(response.data)
+    try:
+        response = supabase.table("employees").select("*").execute()
+        data = response.data
 
-    if df.empty:
+        if not data:
+            raise ValueError("Empty table")
+
+        df = pd.DataFrame(data)
+
+    except Exception as e:
+        st.warning(f"Using fallback data (DB issue: {e})")
+
         df = pd.DataFrame({
-            "Employee": ["Alice", "Bob"],
-            "Q1": [70, 60],
-            "Q2": [75, 65],
-            "Q3": [80, 70],
-            "Q4": [85, 72],
-            "Appraisal Completed": [True, False]
+            "employee": ["Alice", "Bob"],
+            "q1": [70, 60],
+            "q2": [75, 65],
+            "q3": [80, 70],
+            "q4": [85, 72],
+            "appraisal_completed": [True, False]
         })
+
     return df
 
+
 def save_data(df):
-    # Clear table and insert fresh data
-    supabase.table("employees").delete().neq("Employee", "").execute()
-    supabase.table("employees").insert(df.to_dict(orient="records")).execute()
+    try:
+        # Replace table contents safely
+        supabase.table("employees").delete().neq("employee", "").execute()
+        supabase.table("employees").insert(df.to_dict(orient="records")).execute()
+    except Exception as e:
+        st.error(f"Save failed: {e}")
 
 # -------------------------
 # SESSION STATE
@@ -97,10 +114,14 @@ df = edited_df.copy()
 # -------------------------
 # KPI CALCULATIONS
 # -------------------------
-df["Improvement %"] = ((df["Q4"] - df["Q1"]) / df["Q1"]) * 100
+try:
+    df["improvement_pct"] = ((df["q4"] - df["q1"]) / df["q1"]) * 100
 
-avg_improvement = df["Improvement %"].mean()
-completion_rate = df["Appraisal Completed"].mean() * 100
+    avg_improvement = df["improvement_pct"].mean()
+    completion_rate = df["appraisal_completed"].mean() * 100
+except:
+    avg_improvement = 0
+    completion_rate = 0
 
 # -------------------------
 # KPI DISPLAY
@@ -130,21 +151,23 @@ with col2:
 # -------------------------
 st.subheader("Employee Performance Trend")
 
-selected_employee = st.selectbox("Select Employee", df["Employee"])
+if not df.empty:
+    selected_employee = st.selectbox("Select Employee", df["employee"])
 
-emp_data = df[df["Employee"] == selected_employee]
+    emp_data = df[df["employee"] == selected_employee]
 
-trend = pd.DataFrame({
-    "Quarter": ["Q1", "Q2", "Q3", "Q4"],
-    "Score": [
-        emp_data["Q1"].values[0],
-        emp_data["Q2"].values[0],
-        emp_data["Q3"].values[0],
-        emp_data["Q4"].values[0],
-    ]
-})
+    if not emp_data.empty:
+        trend = pd.DataFrame({
+            "Quarter": ["Q1", "Q2", "Q3", "Q4"],
+            "Score": [
+                emp_data["q1"].values[0],
+                emp_data["q2"].values[0],
+                emp_data["q3"].values[0],
+                emp_data["q4"].values[0],
+            ]
+        })
 
-st.line_chart(trend.set_index("Quarter"))
+        st.line_chart(trend.set_index("Quarter"))
 
 # -------------------------
 # FOOTER
