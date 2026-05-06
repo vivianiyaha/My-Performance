@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -18,73 +19,46 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 st.set_page_config(page_title="Performance Dashboard", layout="wide")
 
 # -------------------------
-# CUSTOM CSS
-# -------------------------
-st.markdown("""
-    <style>
-    .stApp {background-color: white;}
-    h1, h2, h3 {color: black;}
-    .metric-box {
-        background-color: #f5f5f5;
-        padding: 15px;
-        border-radius: 10px;
-        border-left: 6px solid orange;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# -------------------------
-# HEADER
-# -------------------------
-col1, col2 = st.columns([1, 6])
-
-with col1:
-    if os.path.exists("logo.png"):
-        st.image("logo.png", width=300)
-
-with col2:
-    st.title("Performance Management Dashboard")
-
-# -------------------------
-# LOAD DATA
+# LOAD DATA (READ ONLY — FIXED)
 # -------------------------
 @st.cache_data(ttl=10)
 def load_data():
     response = supabase.table("employees").select("*").execute()
     data = response.data or []
 
-    # 👇 THIS is where the new code goes
-    if len(data) == 0:
-        default_data = [
-            {
-                "employee": "Alice",
-                "q1": 70,
-                "q2": 75,
-                "q3": 80,
-                "q4": 85,
-                "appraisal_completed": True
-            },
-            {
-                "employee": "Bob",
-                "q1": 60,
-                "q2": 65,
-                "q3": 70,
-                "q4": 72,
-                "appraisal_completed": False
-            }
-        ]
-
-        supabase.table("employees").insert(default_data).execute()
-        return pd.DataFrame(default_data)
-
     return pd.DataFrame(data)
 
 # -------------------------
-# SAVE DATA (FIXED - IMPORTANT)
+# SEED DATA (RUN ON DEMAND ONLY)
+# -------------------------
+def seed_data():
+    default_data = [
+        {
+            "employee": "Alice",
+            "q1": 70,
+            "q2": 75,
+            "q3": 80,
+            "q4": 85,
+            "appraisal_completed": True
+        },
+        {
+            "employee": "Bob",
+            "q1": 60,
+            "q2": 65,
+            "q3": 70,
+            "q4": 72,
+            "appraisal_completed": False
+        }
+    ]
+
+    supabase.table("employees").insert(default_data).execute()
+
+# -------------------------
+# SAVE DATA (UPSERT SAFE VERSION)
 # -------------------------
 def save_data(df):
     try:
-        # safer delete (prevents wiping issues)
+        # safer approach: delete + insert (controlled)
         supabase.table("employees").delete().neq("employee", "NONE").execute()
 
         supabase.table("employees").insert(
@@ -93,6 +67,15 @@ def save_data(df):
 
     except Exception as e:
         st.error(f"Save failed: {e}")
+
+# -------------------------
+# HEADER
+# -------------------------
+st.title("Performance Management Dashboard")
+
+if st.button("Seed Database (First Time Only)"):
+    seed_data()
+    st.success("Database seeded!")
 
 # -------------------------
 # SESSION STATE
@@ -115,7 +98,7 @@ edited_df = st.data_editor(
 )
 
 # -------------------------
-# AUTO SAVE (FIXED SAFER CHECK)
+# AUTO SAVE
 # -------------------------
 if not edited_df.equals(st.session_state.last_saved):
     save_data(edited_df)
@@ -126,15 +109,13 @@ if not edited_df.equals(st.session_state.last_saved):
 df = edited_df.copy()
 
 # -------------------------
-# KPI CALCULATIONS (SAFE)
+# KPI CALCULATIONS
 # -------------------------
 try:
     df["improvement_pct"] = ((df["q4"] - df["q1"]) / df["q1"]) * 100
-
     avg_improvement = df["improvement_pct"].mean()
     completion_rate = df["appraisal_completed"].mean() * 100
-
-except Exception:
+except:
     avg_improvement = 0
     completion_rate = 0
 
@@ -146,47 +127,39 @@ st.subheader("Key Performance Indicators")
 col1, col2 = st.columns(2)
 
 with col1:
-    st.markdown(f"""
-    <div class="metric-box">
-        <h3>% Improvement Over Time</h3>
-        <h2>{avg_improvement:.2f}%</h2>
-    </div>
-    """, unsafe_allow_html=True)
+    st.metric("% Improvement", f"{avg_improvement:.2f}%")
 
 with col2:
-    st.markdown(f"""
-    <div class="metric-box">
-        <h3>Appraisal Completion Rate</h3>
-        <h2>{completion_rate:.2f}%</h2>
-    </div>
-    """, unsafe_allow_html=True)
+    st.metric("Completion Rate", f"{completion_rate:.2f}%")
 
 # -------------------------
-# TREND (SAFE)
+# TREND
 # -------------------------
 st.subheader("Employee Performance Trend")
 
-if not df.empty and "employee" in df.columns:
+if not df.empty:
 
-    selected_employee = st.selectbox("Select Employee", df["employee"].unique())
+    selected_employee = st.selectbox(
+        "Select Employee",
+        df["employee"].unique()
+    )
 
     emp_data = df[df["employee"] == selected_employee]
 
-    if not emp_data.empty:
-        trend = pd.DataFrame({
-            "Quarter": ["Q1", "Q2", "Q3", "Q4"],
-            "Score": [
-                emp_data["q1"].values[0],
-                emp_data["q2"].values[0],
-                emp_data["q3"].values[0],
-                emp_data["q4"].values[0],
-            ]
-        })
+    trend = pd.DataFrame({
+        "Quarter": ["Q1", "Q2", "Q3", "Q4"],
+        "Score": [
+            emp_data["q1"].values[0],
+            emp_data["q2"].values[0],
+            emp_data["q3"].values[0],
+            emp_data["q4"].values[0],
+        ]
+    })
 
-        st.line_chart(trend.set_index("Quarter"))
+    st.line_chart(trend.set_index("Quarter"))
 
 # -------------------------
 # FOOTER
 # -------------------------
 st.markdown("---")
-st.markdown("© 2026 Performance Dashboard")
+st.caption("© 2026 Performance Dashboard")
