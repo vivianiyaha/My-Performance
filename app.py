@@ -50,30 +50,34 @@ with col2:
 # -------------------------
 @st.cache_data(ttl=10)
 def load_data():
-    try:
-        response = supabase.table("employees").select("*").execute()
-        data = response.data or []
+    response = supabase.table("employees").select("*").execute()
+    data = response.data or []
 
-        df = pd.DataFrame(data)
+    # 👇 THIS is where the new code goes
+    if len(data) == 0:
+        default_data = [
+            {
+                "employee": "Alice",
+                "q1": 70,
+                "q2": 75,
+                "q3": 80,
+                "q4": 85,
+                "appraisal_completed": True
+            },
+            {
+                "employee": "Bob",
+                "q1": 60,
+                "q2": 65,
+                "q3": 70,
+                "q4": 72,
+                "appraisal_completed": False
+            }
+        ]
 
-        # IMPORTANT FIX: handle truly empty table safely
-        if df.empty:
-            raise ValueError("Empty table")
+        supabase.table("employees").insert(default_data).execute()
+        return pd.DataFrame(default_data)
 
-        return df
-
-    except Exception as e:
-        st.warning(f"Using fallback data (DB issue: {e})")
-
-        return pd.DataFrame({
-            "employee": ["Alice", "Bob"],
-            "q1": [70, 60],
-            "q2": [75, 65],
-            "q3": [80, 70],
-            "q4": [85, 72],
-            "appraisal_completed": [True, False]
-        })
-
+    return pd.DataFrame(data)
 
 # -------------------------
 # SAVE DATA (FIXED - IMPORTANT)
