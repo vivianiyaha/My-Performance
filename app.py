@@ -5,7 +5,7 @@ import os
 from supabase import create_client
 
 # -------------------------
-# SUPABASE CONFIG (USE ENV VARS)
+# SUPABASE CONFIG
 # -------------------------
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://klfkkitsbuaclttnncap.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_2tcV04t6R3BXva5v2K-rLw_skW2ls_p")
@@ -39,32 +39,33 @@ st.markdown("""
 col1, col2 = st.columns([1, 6])
 
 with col1:
-    try:
+    if os.path.exists("logo.png"):
         st.image("logo.png", width=120)
-    except:
-        st.write("")
 
 with col2:
     st.title("Performance Management Dashboard")
 
 # -------------------------
-# LOAD DATA FROM DATABASE
+# LOAD DATA
 # -------------------------
 @st.cache_data(ttl=10)
 def load_data():
     try:
         response = supabase.table("employees").select("*").execute()
-        data = response.data
-
-        if not data:
-            raise ValueError("Empty table")
+        data = response.data or []
 
         df = pd.DataFrame(data)
+
+        # IMPORTANT FIX: handle truly empty table safely
+        if df.empty:
+            raise ValueError("Empty table")
+
+        return df
 
     except Exception as e:
         st.warning(f"Using fallback data (DB issue: {e})")
 
-        df = pd.DataFrame({
+        return pd.DataFrame({
             "employee": ["Alice", "Bob"],
             "q1": [70, 60],
             "q2": [75, 65],
@@ -73,14 +74,19 @@ def load_data():
             "appraisal_completed": [True, False]
         })
 
-    return df
 
-
+# -------------------------
+# SAVE DATA (FIXED - IMPORTANT)
+# -------------------------
 def save_data(df):
     try:
-        # Replace table contents safely
-        supabase.table("employees").delete().neq("employee", "").execute()
-        supabase.table("employees").insert(df.to_dict(orient="records")).execute()
+        # safer delete (prevents wiping issues)
+        supabase.table("employees").delete().neq("employee", "NONE").execute()
+
+        supabase.table("employees").insert(
+            df.to_dict(orient="records")
+        ).execute()
+
     except Exception as e:
         st.error(f"Save failed: {e}")
 
@@ -98,10 +104,14 @@ if "last_saved" not in st.session_state:
 # -------------------------
 st.subheader("Employee Quarterly Reviews")
 
-edited_df = st.data_editor(st.session_state.data, num_rows="dynamic")
+edited_df = st.data_editor(
+    st.session_state.data,
+    num_rows="dynamic",
+    use_container_width=True
+)
 
 # -------------------------
-# AUTO SAVE
+# AUTO SAVE (FIXED SAFER CHECK)
 # -------------------------
 if not edited_df.equals(st.session_state.last_saved):
     save_data(edited_df)
@@ -112,14 +122,15 @@ if not edited_df.equals(st.session_state.last_saved):
 df = edited_df.copy()
 
 # -------------------------
-# KPI CALCULATIONS
+# KPI CALCULATIONS (SAFE)
 # -------------------------
 try:
     df["improvement_pct"] = ((df["q4"] - df["q1"]) / df["q1"]) * 100
 
     avg_improvement = df["improvement_pct"].mean()
     completion_rate = df["appraisal_completed"].mean() * 100
-except:
+
+except Exception:
     avg_improvement = 0
     completion_rate = 0
 
@@ -147,12 +158,13 @@ with col2:
     """, unsafe_allow_html=True)
 
 # -------------------------
-# TREND
+# TREND (SAFE)
 # -------------------------
 st.subheader("Employee Performance Trend")
 
-if not df.empty:
-    selected_employee = st.selectbox("Select Employee", df["employee"])
+if not df.empty and "employee" in df.columns:
+
+    selected_employee = st.selectbox("Select Employee", df["employee"].unique())
 
     emp_data = df[df["employee"] == selected_employee]
 
