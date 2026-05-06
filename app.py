@@ -23,7 +23,7 @@ st.set_page_config(page_title="Performance Dashboard", layout="wide")
 st.markdown("""
     <style>
     .stApp {background-color: white;}
-    h1, h2, h3 {color: black;}
+    h1, h2, h3 {color: green;}
     .metric-box {
         background-color: #f5f5f5;
         padding: 15px;
